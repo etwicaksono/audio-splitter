@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QItemSelectionModel, QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QHeaderView, QPushButton, QTableWidget, QTableWidgetItem,
@@ -21,7 +21,7 @@ class SentenceTable(QTableWidget):
             "Include", "Reviewed", "Boundary status",
         ])
         self.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setAlternatingRowColors(True)
         self.verticalHeader().hide()
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
@@ -30,14 +30,45 @@ class SentenceTable(QTableWidget):
         self.itemChanged.connect(self.item_changed)
 
     def set_sentences(self, sentences: list[Sentence], duration: float):
+        self.clearSelection()
         self.sentences = sentences
         self.audio_duration = duration
+        self.refresh()
+        if self.sentences:
+            self.selectRow(0)
+        self.updated.emit()
+
+    def selected_rows(self) -> list[int]:
+        return sorted(index.row() for index in self.selectionModel().selectedRows())
+
+    def checkbox_state(self, field: str, rows=None):
+        if field not in ("include", "reviewed"):
+            raise ValueError("Choose Include or Reviewed.")
+        rows = list(range(len(self.sentences))) if rows is None else list(rows)
+        if not rows:
+            return Qt.Unchecked
+        checked = sum(getattr(self.sentences[row], field) for row in rows)
+        if checked == len(rows):
+            return Qt.Checked
+        return Qt.PartiallyChecked if checked else Qt.Unchecked
+
+    def set_checked(self, field: str, checked: bool, rows=None):
+        if field not in ("include", "reviewed"):
+            raise ValueError("Choose Include or Reviewed.")
+        rows = list(range(len(self.sentences))) if rows is None else sorted(set(rows))
+        if not rows:
+            return
+        if any(not 0 <= row < len(self.sentences) for row in rows):
+            raise ValueError("Select existing sentence rows.")
+        for row in rows:
+            setattr(self.sentences[row], field, checked)
         self.refresh()
         self.updated.emit()
 
     def refresh(self):
-        selected = self.currentRow()
-        self.blockSignals(True)
+        selected = self.selected_rows()
+        current = self.currentRow()
+        blocker = QSignalBlocker(self)
         self.setRowCount(len(self.sentences))
         for row, sentence in enumerate(self.sentences):
             values = [str(row + 1), sentence.text, f"{sentence.start:.3f}",
@@ -65,22 +96,30 @@ class SentenceTable(QTableWidget):
             if sentence.needs_review:
                 item.setBackground(QColor("#fff0cf"))
             self.setItem(row, 8, item)
-        self.blockSignals(False)
+        self.clearSelection()
+        selection = self.selectionModel()
+        for row in selected:
+            if row < len(self.sentences):
+                selection.select(self.model().index(row, 0),
+                                 QItemSelectionModel.Select | QItemSelectionModel.Rows)
         if self.sentences:
-            self.selectRow(min(max(selected, 0), len(self.sentences) - 1))
+            selection.setCurrentIndex(
+                self.model().index(min(max(current, 0), len(self.sentences) - 1), 0),
+                QItemSelectionModel.NoUpdate)
+        blocker.unblock()
 
     def item_changed(self, item):
         row, col = item.row(), item.column()
         if not 0 <= row < len(self.sentences):
             return
+        if col in (6, 7):
+            self.set_checked("include" if col == 6 else "reviewed",
+                             item.checkState() == Qt.Checked, [row])
+            return
         sentence = self.sentences[row]
         old = (sentence.text, sentence.start, sentence.end)
         try:
-            if col == 6:
-                sentence.include = item.checkState() == Qt.Checked
-            elif col == 7:
-                sentence.reviewed = item.checkState() == Qt.Checked
-            elif col in (1, 2, 3):
+            if col in (1, 2, 3):
                 if col == 1:
                     sentence.text = item.text().strip()
                 elif col == 2:
@@ -102,8 +141,11 @@ class SentenceTable(QTableWidget):
         self.updated.emit()
 
     def merge_selected(self):
-        row = self.currentRow()
-        if row < 0 or row + 1 >= len(self.sentences):
+        rows = self.selected_rows()
+        if len(rows) != 1:
+            raise ValueError("Select exactly one sentence to merge with the following sentence.")
+        row = rows[0]
+        if row + 1 >= len(self.sentences):
             raise ValueError("Select a sentence with a following sentence to merge.")
         self.sentences[row:row + 2] = [
             merge_sentences(self.sentences[row], self.sentences[row + 1])]
@@ -111,9 +153,10 @@ class SentenceTable(QTableWidget):
         self.updated.emit()
 
     def split_selected(self, after_word: int):
-        row = self.currentRow()
-        if row < 0:
-            raise ValueError("Select a sentence to split.")
+        rows = self.selected_rows()
+        if len(rows) != 1:
+            raise ValueError("Select exactly one sentence to split.")
+        row = rows[0]
         self.sentences[row:row + 1] = list(split_sentence(self.sentences[row], after_word))
         self.refresh()
         self.updated.emit()

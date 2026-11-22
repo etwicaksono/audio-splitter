@@ -1,11 +1,11 @@
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import Qt, QSettings, QSignalBlocker
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QMainWindow,
     QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSpinBox, QVBoxLayout,
-    QWidget, QInputDialog, QSplitter, QGroupBox,
+    QWidget, QInputDialog, QSplitter, QGroupBox, QScrollArea,
 )
 
 from src.services.audio_service import SUPPORTED, clip_ranges
@@ -29,7 +29,12 @@ class MainWindow(QMainWindow):
         self.local_model = None
         self.close_when_idle = False
         central = QWidget()
-        self.setCentralWidget(central)
+        central.setObjectName("central")
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setWidget(central)
+        self.setCentralWidget(scroll)
         layout = QVBoxLayout(central)
         layout.setContentsMargins(24, 18, 24, 18)
         layout.setSpacing(12)
@@ -103,18 +108,42 @@ class MainWindow(QMainWindow):
         transcript_layout.addWidget(self.transcript)
         splitter.addWidget(transcript_box)
         table_box = QWidget()
+        table_box.setObjectName("sentencePanel")
         table_layout = QVBoxLayout(table_box)
         table_layout.setContentsMargins(0, 0, 0, 0)
         self.summary_label = QLabel("2. Review sentences")
         table_layout.addWidget(self.summary_label)
         self.table = SentenceTable()
+        bulk_row = QHBoxLayout()
+        self.select_all_button = QPushButton("Select all rows")
+        self.selection_label = QLabel("0 selected")
+        self.include_selected_box = QCheckBox("Include selected")
+        self.reviewed_selected_box = QCheckBox("Reviewed selected")
+        self.include_all_box = QCheckBox("Include all")
+        self.reviewed_all_box = QCheckBox("Reviewed all")
+        bulk_row.addWidget(self.select_all_button)
+        bulk_row.addWidget(self.selection_label)
+        bulk_row.addStretch()
+        for box, field, scope in (
+                (self.include_selected_box, "Include", "selected"),
+                (self.reviewed_selected_box, "Reviewed", "selected"),
+                (self.include_all_box, "Include", "all"),
+                (self.reviewed_all_box, "Reviewed", "all")):
+            box.setTristate(True)
+            box.setAccessibleName(f"{field} for {scope} sentences")
+            box.setToolTip(
+                f"Check or uncheck {field} for {scope} sentences. A dash means mixed values."
+                + (" Mark Reviewed only after checking the clips." if field == "Reviewed" else ""))
+            bulk_row.addWidget(box)
+        table_layout.addLayout(bulk_row)
         table_layout.addWidget(self.table)
         edit_row = QHBoxLayout()
         self.merge_button = QPushButton("Merge with next")
         self.split_button = QPushButton("Split at word…")
         edit_row.addWidget(self.merge_button)
         edit_row.addWidget(self.split_button)
-        hint = QLabel("Double-click text or times to edit. Yellow rows must be reviewed before export.")
+        hint = QLabel("Ctrl/Shift-click rows to select multiple. Double-click text or times to edit. "
+                      "Yellow rows must be reviewed before export.")
         hint.setWordWrap(True)
         hint.setObjectName("muted")
         edit_row.addWidget(hint, 1)
@@ -156,6 +185,16 @@ class MainWindow(QMainWindow):
         self.table.preview_requested.connect(self.preview)
         self.table.error.connect(self.show_error)
         self.table.updated.connect(self.update_summary)
+        self.table.itemSelectionChanged.connect(self.update_bulk_controls)
+        self.select_all_button.clicked.connect(self.toggle_row_selection)
+        self.include_selected_box.clicked.connect(
+            lambda checked: self.table.set_checked("include", checked, self.table.selected_rows()))
+        self.reviewed_selected_box.clicked.connect(
+            lambda checked: self.table.set_checked("reviewed", checked, self.table.selected_rows()))
+        self.include_all_box.clicked.connect(
+            lambda checked: self.table.set_checked("include", checked))
+        self.reviewed_all_box.clicked.connect(
+            lambda checked: self.table.set_checked("reviewed", checked))
         self.merge_button.clicked.connect(self.merge)
         self.split_button.clicked.connect(self.split)
         self.export_button.clicked.connect(lambda: self.export(False))
@@ -298,9 +337,37 @@ class MainWindow(QMainWindow):
             widget.setEnabled(not busy)
         self.process_button.setEnabled(not busy and self.metadata is not None)
         has_sentences = bool(self.table.sentences)
-        for widget in (self.merge_button, self.split_button, self.export_button, self.zip_button):
+        for widget in (self.export_button, self.zip_button):
             widget.setEnabled(not busy and has_sentences)
         self.cancel_button.setEnabled(busy)
+        self.update_bulk_controls()
+
+    def toggle_row_selection(self):
+        if self.worker or not self.table.sentences:
+            return
+        if len(self.table.selected_rows()) == len(self.table.sentences):
+            self.table.clearSelection()
+        else:
+            self.table.selectAll()
+
+    def update_bulk_controls(self):
+        rows = self.table.selected_rows()
+        count = len(self.table.sentences)
+        ready = self.worker is None and count > 0
+        self.selection_label.setText(f"{len(rows)} selected")
+        self.select_all_button.setText(
+            "Unselect all rows" if count and len(rows) == count else "Select all rows")
+        self.select_all_button.setEnabled(ready)
+        for box, field, target in (
+                (self.include_selected_box, "include", rows),
+                (self.reviewed_selected_box, "reviewed", rows),
+                (self.include_all_box, "include", None),
+                (self.reviewed_all_box, "reviewed", None)):
+            box.setEnabled(ready and (target is None or bool(target)))
+            with QSignalBlocker(box):
+                box.setCheckState(self.table.checkbox_state(field, target))
+        self.merge_button.setEnabled(ready and len(rows) == 1 and rows[0] + 1 < count)
+        self.split_button.setEnabled(ready and len(rows) == 1)
 
     def update_summary(self):
         sentences = self.table.sentences

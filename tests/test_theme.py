@@ -1,9 +1,10 @@
 import pytest
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QInputDialog, QLabel, QMessageBox, QPushButton
+from PySide6.QtWidgets import QInputDialog, QLabel, QMessageBox, QPushButton, QScrollArea
 
 from app import LIGHT_THEME
+from src.models.sentence import Sentence
 from src.services.export_service import ExportResult
 from src.ui.main_window import MainWindow
 
@@ -97,4 +98,34 @@ def test_export_complete_message_contrast(themed_app, qtbot, tmp_path):
     assert messages == [window.status_label.text()]
     assert "Exported 2 MP3" in messages[0]
     assert str(result.folder) in messages[0] and str(result.archive) in messages[0]
+    window.close()
+
+
+@pytest.mark.parametrize("size", [(1400, 940), (1000, 720)], ids=["normal", "compact"])
+def test_bulk_toolbar_contrast_and_compact_layout(themed_app, qtbot, size):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.table.set_sentences([Sentence("One.", 0, 1), Sentence("Two.", 2, 3)], 4)
+    window.resize(*size)
+    window.show()
+    qtbot.waitExposed(window)
+    scroll = window.centralWidget()
+    assert isinstance(scroll, QScrollArea)
+    panel = window.table.parentWidget()
+    rendered = panel.grab().toImage()
+    assert rendered.pixelColor(0, 0) == QColor("#f7f9fc")
+    for widget in (window.selection_label, window.summary_label, window.include_selected_box,
+                   window.reviewed_selected_box, window.include_all_box, window.reviewed_all_box):
+        corner = widget.mapTo(panel, widget.rect().bottomRight())
+        background = rendered.pixelColor(corner)
+        assert background == QColor("#f7f9fc")
+        foreground = widget.palette().color(QPalette.WindowText)
+        assert contrast_ratio(foreground, background) >= 4.5
+    assert window.table.parentWidget().rect().contains(window.table.geometry())
+    if size == (1000, 720):
+        assert scroll.verticalScrollBar().maximum() > 0
+    for widget in (window.select_all_button, window.reviewed_all_box, window.export_button):
+        scroll.ensureWidgetVisible(widget)
+        center = widget.mapTo(scroll.viewport(), widget.rect().center())
+        assert scroll.viewport().rect().contains(center)
     window.close()

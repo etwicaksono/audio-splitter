@@ -25,6 +25,25 @@ CSV timestamps describe the actual padded source interval, not the unpadded word
 Padding defaults to 100 ms before and 150 ms after, capped at neighboring sentence
 boundaries, including excluded sentences.
 
+### Select and update several sentences
+
+Use **Ctrl-click** for separate rows or **Shift-click** for a range. The
+**Select all rows / Unselect all rows** toggle changes row selection only, not
+the Include or Reviewed values. The toolbar shows how many rows are selected.
+
+- **Include selected / Reviewed selected** check or uncheck the selected rows.
+- **Include all / Reviewed all** check or uncheck every sentence, including rows
+  outside the current selection. Click again to clear every value.
+- A dash means the target rows have mixed values. Clicking it checks all target
+  rows; the next click unchecks them. A checkbox in the table still changes only
+  its own sentence. Selection is retained after edits and checkbox changes.
+
+Mark **Reviewed** only after checking the clips. Bulk review is a manual action;
+it does not validate speech or remove the original review reasons. Unchecking it
+restores **Needs review** for flagged sentences. Merge/split require exactly one
+selected row. Bulk controls are disabled while a background task is running.
+On small windows, scroll the main view to reach controls without clipping them.
+
 ## Models and offline use
 
 CPU inference and int8 quantization are always used. No GPU is required.
