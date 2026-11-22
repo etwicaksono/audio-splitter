@@ -20,7 +20,16 @@ MP3s, UTF-8 TXT/CSV transcripts, and an optional ZIP.
 
 Both export buttons produce MP3s plus `transcript.txt` and `transcript.csv`.
 ZIP additionally creates a sibling ZIP containing the same files.
-`001.mp3` through `999.mp3` use three digits; the next is `1000.mp3`.
+MP3 names combine the sequential number and up to four opening words from the
+current sentence text, for example `001-once-upon-a-time.mp3`. The text suffix
+uses lowercase ASCII letters/numbers separated by hyphens and is capped at
+40 characters. Accents are normalized, apostrophes are removed, and unsafe
+characters cannot become part of the filename. Identical opening words remain
+unique because the numeric prefix differs. Prefixes use at least three digits,
+then grow naturally after `999`. If no usable words remain, the name is numeric
+only, such as `001.mp3`. TXT, CSV, and ZIP use the actual generated filenames.
+This changes new exports only; existing exported files are not renamed. The
+filename cap does not limit the length of the chosen parent folder path.
 CSV timestamps describe the actual padded source interval, not the unpadded words.
 Padding defaults to 100 ms before and 150 ms after, capped at neighboring sentence
 boundaries, including excluded sentences.

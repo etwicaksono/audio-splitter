@@ -79,7 +79,7 @@ def test_export_mp3_button_and_review_gate(qtbot, tone_audio, tmp_path, monkeypa
     assert window.worker is not None
     assert not window.table.isEnabled() and not window.process_button.isEnabled()
     qtbot.waitUntil(lambda: window.worker is None, timeout=30000)
-    assert (tmp_path / "gui-export" / "002.mp3").is_file()
+    assert (tmp_path / "gui-export" / "002-another-sentence.mp3").is_file()
     assert (tmp_path / "gui-export" / "transcript.txt").is_file()
     assert "Exported 2 MP3" in window.status_label.text()
     assert window.table.isEnabled()

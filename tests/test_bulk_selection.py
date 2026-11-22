@@ -136,8 +136,9 @@ def test_bulk_review_and_include_drive_real_export(qtbot, tone_audio, tmp_path, 
     assert not window.include_all_box.isEnabled() and not window.reviewed_all_box.isEnabled()
     qtbot.waitUntil(lambda: window.worker is None, timeout=30000)
     destination = tmp_path / "bulk-export"
-    assert (destination / "001.mp3").is_file() and (destination / "002.mp3").is_file()
-    assert not (destination / "003.mp3").exists()
+    assert (destination / "001-first-sentence.mp3").is_file()
+    assert (destination / "002-third-sentence.mp3").is_file()
+    assert len(list(destination.glob("*.mp3"))) == 2
     transcript = (destination / "transcript.txt").read_text(encoding="utf-8")
     assert "First sentence." in transcript and "Third sentence." in transcript
     assert "Second sentence." not in transcript

@@ -2,8 +2,10 @@ from dataclasses import dataclass
 import csv
 import math
 from pathlib import Path
+import re
 import shutil
 import tempfile
+import unicodedata
 import zipfile
 
 from src.models.sentence import Sentence
@@ -11,10 +13,19 @@ from src.services.audio_service import AudioMetadata, AudioService, clip_ranges
 from src.services.errors import AppError, Cancelled
 
 
-def filename_for(number: int) -> str:
+FILENAME_WORD_LIMIT = 4
+FILENAME_SLUG_LIMIT = 40
+
+
+def filename_for(number: int, text: str = "") -> str:
     if number < 1:
         raise ValueError("Clip numbers start at one.")
-    return f"{number:03d}.mp3"
+    normalized = unicodedata.normalize("NFKD", text.replace("’", "'"))
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char)).lower()
+    words = re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)*", normalized)[:FILENAME_WORD_LIMIT]
+    slug = "-".join(word.replace("'", "") for word in words)[:FILENAME_SLUG_LIMIT].rstrip("-")
+    suffix = f"-{slug}" if slug else ""
+    return f"{number:03d}{suffix}.mp3"
 
 
 def write_transcripts(folder: Path, rows: list[dict]) -> None:
@@ -71,7 +82,7 @@ class ExportService:
                     if cancel and cancel():
                         raise Cancelled("Export cancelled. No partial export was kept.")
                     start, end = ranges[index]
-                    filename = filename_for(number)
+                    filename = filename_for(number, sentence.text)
                     self.audio.cut(source, stage / filename, start, end, prefer_copy, cancel)
                     rows.append({
                         "filename": filename, "sentence": sentence.text,

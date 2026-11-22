@@ -96,13 +96,15 @@ def test_actual_sequential_export_zip_and_exclusion(tone_audio, tmp_path):
     result = ExportService().export(metadata, sentences, tmp_path / "export", make_zip=True)
     assert result.count == 2
     assert {f.name for f in result.folder.iterdir()} == {
-        "001.mp3", "002.mp3", "transcript.txt", "transcript.csv"}
+        "001-first-sentence.mp3", "002-second-sentence.mp3", "transcript.txt", "transcript.csv"}
     with zipfile.ZipFile(result.archive) as archive:
         assert archive.testzip() is None
         assert set(archive.namelist()) == {f.name for f in result.folder.iterdir()}
     with (result.folder / "transcript.csv").open(encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
     assert rows[1]["sentence"] == sentences[2].text
+    assert [row["filename"] for row in rows] == [
+        "001-first-sentence.mp3", "002-second-sentence.mp3"]
     assert float(rows[0]["start_time"]) == pytest.approx(0)
     assert float(rows[1]["duration"]) == pytest.approx(1.75)
 
@@ -145,7 +147,7 @@ def test_review_gate_missing_space_cancel_and_existing_folder(tone_audio, tmp_pa
 def test_failed_second_clip_never_silently_skips(tone_audio, tmp_path):
     class FailingAudio(AudioService):
         def cut(self, source, destination, start, end, prefer_copy=False, cancel=None):
-            if destination.name == "002.mp3":
+            if destination.name == "002-two.mp3":
                 raise AppError("Injected failure")
             return super().cut(source, destination, start, end, prefer_copy, cancel)
     target = tmp_path / "failed"
