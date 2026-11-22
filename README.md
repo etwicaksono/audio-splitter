@@ -66,6 +66,51 @@ For runtime dependencies only, install `requirements.txt`. Double-click
 `launch.bat` to launch an existing source environment or built release without
 opening PowerShell. `storytelling.mp3` is left unchanged.
 
+## Repository commands with Make (Windows)
+
+Use GNU Make 3.81 or newer and Windows PowerShell. Run commands from the repository
+root, or use `make -C "D:\Project\audio-splitter" <target>`. Run `make --version`
+to check availability. If Make is missing, install a Windows GNU Make distribution
+such as GnuWin32 and add its `bin` folder to PATH.
+
+```powershell
+make help        # Show available commands; also the default for plain make
+make install     # Create/reuse .venv and install development dependencies
+make run         # Open the desktop app
+make test        # Run pytest
+make lint        # Check Python code with Ruff
+make check       # Run lint and tests
+make doctor      # Check Python, packages, FFmpeg, and FFprobe
+make model MODEL=small
+make build
+make build BUNDLE_MODEL=models/small
+make clean
+```
+
+`make setup` creates the environment without downloading application dependencies
+and ensures pip exists, including for environments created with uv. New
+environments require Python 3.11+. The existing project environment is preferred
+as a bootstrap when available, then `py -3.11`, then `python`.
+
+Custom paths, including spaces, are supported:
+
+```powershell
+make install "PYTHON=C:/Python 3.11/python.exe" "VENV=.venv custom"
+make test "VENV=.venv custom"
+make build "BUNDLE_MODEL=D:/Models/whisper small"
+```
+
+`PYTHON` selects only the bootstrap interpreter for a **new** environment. Tasks
+always use the chosen environment's Python; there is no need to activate it.
+`make build` calls the existing Windows build script and runs its checks before
+packaging. `make model` needs internet unless the selected files are already local.
+
+`make clean` removes only PyInstaller's `build/` and known project cache folders.
+It keeps `dist/`, `models/`, `output/`, `.venv`, `.tooling`, and original recordings.
+It refuses to delete linked directories or follow junctions. Model downloads,
+builds, and cleanup run only when explicitly requested. Commands propagate failures
+to Make. Execution-policy bypass is limited to the child PowerShell process.
+
 ## Build a Windows executable
 
 Run on 64-bit Windows with the development dependencies installed:
