@@ -1,0 +1,11 @@
+.venv/
+.tooling/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+/models/
+output/*
+!output/.gitkeep
+*.log
