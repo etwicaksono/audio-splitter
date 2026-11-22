@@ -11,7 +11,7 @@ from src.ui.main_window import MainWindow
 
 LIGHT_THEME = """
 QWidget { font-family: 'Segoe UI'; font-size: 10pt; color: #20324d; }
-QMainWindow, QWidget#central { background: #f7f9fc; }
+QMainWindow, QDialog, QWidget#central { background: #f7f9fc; }
 QGroupBox { border: 1px solid #dbe3ef; border-radius: 8px; margin-top: 10px;
             padding: 10px; background: white; }
 QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
