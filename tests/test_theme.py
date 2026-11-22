@@ -77,11 +77,13 @@ def test_input_dialog_contrast(themed_app, qtbot):
     dialog.close()
 
 
-def test_export_complete_message_contrast(themed_app, qtbot, tmp_path):
+@pytest.mark.parametrize("make_zip", [False, True], ids=["folder", "zip-only"])
+def test_export_complete_message_contrast(themed_app, qtbot, tmp_path, make_zip):
     window = MainWindow()
     qtbot.addWidget(window)
     window.show()
-    result = ExportResult(tmp_path / "recording_split", 2, tmp_path / "recording_split.zip")
+    result = ExportResult(None, 2, tmp_path / "recording_split.zip") if make_zip else \
+        ExportResult(tmp_path / "recording_split", 2, None)
     messages = []
 
     def inspect_message():
@@ -99,7 +101,11 @@ def test_export_complete_message_contrast(themed_app, qtbot, tmp_path):
     window.exported(result)
     assert messages == [window.status_label.text()]
     assert "Exported 2 MP3" in messages[0]
-    assert str(result.folder) in messages[0] and str(result.archive) in messages[0]
+    if make_zip:
+        assert "in ZIP archive:" in messages[0] and str(result.archive) in messages[0]
+        assert "to:\n" not in messages[0] and "None" not in messages[0]
+    else:
+        assert str(result.folder) in messages[0] and "ZIP archive" not in messages[0]
     window.close()
 
 

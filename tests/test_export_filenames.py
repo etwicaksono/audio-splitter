@@ -1,4 +1,5 @@
 import csv
+import io
 import re
 import zipfile
 
@@ -59,7 +60,9 @@ def test_repeated_prefixes_and_large_numbers_remain_unique():
 
 
 @pytest.mark.integration
-def test_real_export_keeps_descriptive_names_consistent_in_transcripts_and_zip(tone_audio, tmp_path):
+@pytest.mark.parametrize("make_zip", [False, True], ids=["folder", "zip-only"])
+def test_real_export_keeps_descriptive_names_consistent_in_transcripts_and_zip(tone_audio, tmp_path,
+                                                                           make_zip):
     audio = AudioService()
     metadata = audio.probe(tone_audio)
     sentences = [
@@ -67,19 +70,26 @@ def test_real_export_keeps_descriptive_names_consistent_in_transcripts_and_zip(t
         Sentence("Café déjà vu résumé, another ending.", 1.2, 2.0),
         Sentence("你好🎤", 2.2, 3.6),
     ]
-    result = ExportService().export(metadata, sentences, tmp_path / "export", make_zip=True)
+    result = ExportService().export(metadata, sentences, tmp_path / "export", make_zip=make_zip)
     expected = ["001-cafe-deja-vu-resume.mp3", "002-cafe-deja-vu-resume.mp3", "003.mp3"]
-    with (result.folder / "transcript.csv").open(encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
+    if make_zip:
+        assert result.folder is None and not (tmp_path / "export").exists()
+        with zipfile.ZipFile(result.archive) as archive:
+            assert archive.testzip() is None
+            assert set(archive.namelist()) == set(expected + ["transcript.txt", "transcript.csv"])
+            contents = {name: archive.read(name) for name in archive.namelist()}
+    else:
+        assert result.archive is None
+        contents = {path.name: path.read_bytes() for path in result.folder.iterdir()}
+    rows = list(csv.DictReader(io.StringIO(contents["transcript.csv"].decode("utf-8"))))
     assert [row["filename"] for row in rows] == expected
     assert [row["sentence"] for row in rows] == [sentence.text for sentence in sentences]
-    lines = (result.folder / "transcript.txt").read_text(encoding="utf-8").splitlines()
+    lines = contents["transcript.txt"].decode("utf-8").splitlines()
     assert [line.split("\t", 1)[0] for line in lines] == expected
-    assert {path.name for path in result.folder.glob("*.mp3")} == set(expected)
+    assert {name for name in contents if name.endswith(".mp3")} == set(expected)
+    inspection = tmp_path / "inspection"
+    inspection.mkdir()
     for name in expected:
-        assert audio.probe(result.folder / name).sample_rate == metadata.sample_rate
-    with zipfile.ZipFile(result.archive) as archive:
-        assert archive.testzip() is None
-        assert set(archive.namelist()) == set(expected + ["transcript.txt", "transcript.csv"])
-        for name in archive.namelist():
-            assert archive.read(name) == (result.folder / name).read_bytes()
+        clip = inspection / name
+        clip.write_bytes(contents[name])
+        assert audio.probe(clip).sample_rate == metadata.sample_rate

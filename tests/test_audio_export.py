@@ -1,4 +1,5 @@
 import csv
+import io
 import shutil
 import zipfile
 
@@ -88,20 +89,31 @@ def test_real_mp3_cut_accuracy(tone_audio, tmp_path):
 
 
 @pytest.mark.integration
-def test_actual_sequential_export_zip_and_exclusion(tone_audio, tmp_path):
+@pytest.mark.parametrize("make_zip", [False, True], ids=["folder", "zip-only"])
+def test_actual_sequential_export_zip_and_exclusion(tone_audio, tmp_path, make_zip):
     metadata = AudioService().probe(tone_audio)
     sentences = [Sentence("First sentence.", 0.1, 1.2),
                  Sentence("Excluded.", 1.4, 1.7, include=False),
                  Sentence('Second, “sentence!”', 2.2, 3.7)]
-    result = ExportService().export(metadata, sentences, tmp_path / "export", make_zip=True)
+    result = ExportService().export(metadata, sentences, tmp_path / "export", make_zip=make_zip)
     assert result.count == 2
-    assert {f.name for f in result.folder.iterdir()} == {
-        "001-first-sentence.mp3", "002-second-sentence.mp3", "transcript.txt", "transcript.csv"}
-    with zipfile.ZipFile(result.archive) as archive:
-        assert archive.testzip() is None
-        assert set(archive.namelist()) == {f.name for f in result.folder.iterdir()}
-    with (result.folder / "transcript.csv").open(encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
+    expected = {"001-first-sentence.mp3", "002-second-sentence.mp3",
+                "transcript.txt", "transcript.csv"}
+    if make_zip:
+        assert result.folder is None
+        assert result.archive == tmp_path / "export.zip"
+        assert not (tmp_path / "export").exists()
+        with zipfile.ZipFile(result.archive) as archive:
+            assert archive.testzip() is None
+            assert set(archive.namelist()) == expected
+            rows = list(csv.DictReader(io.StringIO(archive.read("transcript.csv").decode("utf-8"))))
+    else:
+        assert result.archive is None
+        assert result.folder == tmp_path / "export"
+        assert {f.name for f in result.folder.iterdir()} == expected
+        with (result.folder / "transcript.csv").open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+    assert not list(tmp_path.glob(".sentence-export-*"))
     assert rows[1]["sentence"] == sentences[2].text
     assert [row["filename"] for row in rows] == [
         "001-first-sentence.mp3", "002-second-sentence.mp3"]
@@ -199,6 +211,7 @@ def test_full_mp3_copy_and_dotted_zip_name(tone_audio, tmp_path):
     result = ExportService().export(metadata, [Sentence("One.", 0, 1)],
                                     tmp_path / "story.version1", make_zip=True)
     assert result.archive.name == "story.version1.zip"
+    assert result.folder is None and not (tmp_path / "story.version1").exists()
 
 
 def test_refinement_covers_word_tails_without_crossing_neighbors():

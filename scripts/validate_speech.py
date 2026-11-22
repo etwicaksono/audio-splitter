@@ -103,7 +103,8 @@ for ($i = 0; $i -lt $texts.Count; $i++) {
         assert end >= truth["speech_end"], ("Last phoneme truncated", end, truth)
         # Ground-truth fixture supplies the review a human would otherwise perform.
         sentence.reviewed = True
-    result = ExportService().export(metadata, sentences, directory / "clips", make_zip=True,
+    # Speech diagnostics need individual clips, so use the folder export mode.
+    result = ExportService().export(metadata, sentences, directory / "clips",
                                     silences=silences)
     with (result.folder / "transcript.csv").open(encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))

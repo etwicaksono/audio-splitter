@@ -43,7 +43,7 @@ def write_transcripts(folder: Path, rows: list[dict]) -> None:
 
 @dataclass(frozen=True)
 class ExportResult:
-    folder: Path
+    folder: Path | None
     count: int
     archive: Path | None
 
@@ -58,7 +58,8 @@ class ExportService:
                ) -> ExportResult:
         destination = Path(destination).resolve()
         archive = destination.parent / (destination.name + ".zip") if make_zip else None
-        if destination.exists() or (archive and archive.exists()):
+        target = archive if archive else destination
+        if target.exists():
             raise AppError("That output folder or ZIP already exists. Choose a new name.")
         if not destination.parent.is_dir():
             raise AppError("The output parent folder does not exist.")
@@ -72,7 +73,7 @@ class ExportService:
         required = math.ceil(expected * (2.2 if make_zip else 1.2) + 10 * 1024 * 1024)
         if shutil.disk_usage(destination.parent).free < required:
             raise AppError("Not enough disk space. Choose another output drive.")
-        committed = False
+        committed = None
         with tempfile.TemporaryDirectory(prefix=".sentence-export-", dir=destination.parent) as temp:
             stage = Path(temp) / "clips"
             stage.mkdir()
@@ -107,16 +108,23 @@ class ExportService:
                             raise AppError("ZIP verification failed.")
                 if cancel and cancel():
                     raise Cancelled("Export cancelled. No partial export was kept.")
-                stage.rename(destination)
-                committed = True
+                if target.exists():
+                    raise AppError("That output folder or ZIP already exists. Choose a new name.")
                 if archive:
+                    shutil.rmtree(stage)
                     staged_zip.rename(archive)
+                else:
+                    stage.rename(destination)
+                committed = target
                 if progress:
                     progress(100, f"Finished: {len(included)} sentence clips")
-                return ExportResult(destination, len(included), archive)
+                return ExportResult(None if archive else destination, len(included), archive)
             except BaseException as exc:
                 if committed:
-                    shutil.rmtree(destination)
+                    if archive:
+                        committed.unlink(missing_ok=True)
+                    else:
+                        shutil.rmtree(committed)
                 if isinstance(exc, (AppError, ValueError)):
                     raise
                 if isinstance(exc, OSError):

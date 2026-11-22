@@ -16,10 +16,13 @@ MP3s, UTF-8 TXT/CSV transcripts, and an optional ZIP.
 6. Yellow **Needs review** rows cannot be exported while included. Hover their
    status to read the reason, preview and correct them, then check **Reviewed**.
 7. Set padding if needed, then **Export MP3** or **Export ZIP**. Choose a parent
-   folder and a new folder name. Existing outputs are never overwritten.
+   folder, then a new output folder name for MP3 or archive name for ZIP (without
+   `.zip`). Existing outputs are never overwritten.
 
-Both export buttons produce MP3s plus `transcript.txt` and `transcript.csv`.
-ZIP additionally creates a sibling ZIP containing the same files.
+**Export MP3** creates a folder containing MP3s, `transcript.txt`, and
+`transcript.csv`. **Export ZIP** creates only a `.zip` archive containing those
+files, without a duplicate uncompressed output folder. Temporary packaging files
+are cleaned up. A same-named folder from a previous export is left untouched.
 MP3 names combine the sequential number and up to four opening words from the
 current sentence text, for example `001-once-upon-a-time.mp3`. The text suffix
 uses lowercase ASCII letters/numbers separated by hyphens and is capped at
@@ -185,8 +188,8 @@ Read `THIRD_PARTY_NOTICES.md` before redistributing bundled FFmpeg/Qt.
 
 Tests cover English punctuation, abbreviations, quoted dialogue, missing
 punctuation, timestamp safety, split/merge, exclusions, numbering, UTF-8
-transcripts, actual FFmpeg cutting, ZIP integrity, failure cleanup, and actual
-Qt import/edit/preview controls. Waveform correlation against independently
+transcripts, actual FFmpeg cutting, ZIP-only output, ZIP integrity, failure cleanup,
+and actual Qt import/edit/preview controls. Waveform correlation against independently
 generated WAV audio checks that MP3 cuts keep the intended samples.
 
 An opt-in developer smoke test uses the real desktop controls/workers:
@@ -198,7 +201,8 @@ An opt-in developer smoke test uses the real desktop controls/workers:
 ```
 
 Use a **new** report folder each time. This writes a screenshot, detected words/
-sentences, timings, clips, transcripts, and ZIP. It intentionally **excludes**
+sentences, timings, and `clips.zip` containing the clips and transcripts, without
+an uncompressed `clips/` folder. It intentionally **excludes**
 sentences requiring manual review instead of pretending a human reviewed them.
 
 Independent Windows speech and audio-fidelity checks:
@@ -208,10 +212,12 @@ Independent Windows speech and audio-fidelity checks:
 .\.venv\Scripts\python.exe scripts\verify_export_audio.py --source output\known-speech-test\known-story.wav --folder output\known-speech-test\clips --known-speech-report output\known-speech-test\validation.json
 ```
 
-The first check compares speech recognition to known text and may fail on a
-recognition mistake even when the exported audio is complete. Its JSON retains
+The first check uses folder export to re-transcribe individual clips. It compares
+speech recognition to known text and may fail on a recognition mistake even when
+the exported audio is complete. Its JSON retains
 the discrepancy. The second independently checks source-waveform coverage,
-decoded sample counts, audio correlation, and ZIP contents.
+decoded sample counts, audio correlation, and, when present, the contents of a
+sibling ZIP.
 
 ## Accuracy and limitations
 

@@ -432,13 +432,15 @@ class MainWindow(QMainWindow):
         if not parent:
             return
         default = self.metadata.path.stem + "_split"
-        name, ok = QInputDialog.getText(self, "Output folder name", "Create a new folder named:", text=default)
+        title = "ZIP archive name" if make_zip else "Output folder name"
+        label = "Create a ZIP archive named (without .zip):" if make_zip else "Create a new folder named:"
+        name, ok = QInputDialog.getText(self, title, label, text=default)
         if not ok:
             return
         name = name.strip()
         if (not name or name in {".", ".."} or any(c in name for c in '<>:"/\\|?*') or
                 name.endswith((".", " "))):
-            self.show_error("Use a simple new folder name without special characters.")
+            self.show_error("Use a simple new output name without special characters.")
             return
         self.player.stop()
         worker = ExportWorker(
@@ -450,9 +452,11 @@ class MainWindow(QMainWindow):
         self.start_worker(worker)
 
     def exported(self, result):
-        message = f"Exported {result.count} MP3 clips and both transcripts to:\n{result.folder}"
         if result.archive:
-            message += f"\n\nZIP archive:\n{result.archive}"
+            message = (f"Exported {result.count} MP3 clips and both transcripts in ZIP archive:\n"
+                       f"{result.archive}")
+        else:
+            message = f"Exported {result.count} MP3 clips and both transcripts to:\n{result.folder}"
         self.status_label.setText(message)
         QMessageBox.information(self, "Export complete", message)
 

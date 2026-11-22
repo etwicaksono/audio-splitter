@@ -1,3 +1,9 @@
+import csv
+import io
+import zipfile
+
+import pytest
+
 from PySide6.QtCore import Qt, QMimeData, QUrl
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from PySide6.QtMultimedia import QMediaPlayer
@@ -56,31 +62,69 @@ def test_real_ui_import_player_and_editing(qtbot, tone_audio, monkeypatch):
     window.close()
 
 
-def test_export_mp3_button_and_review_gate(qtbot, tone_audio, tmp_path, monkeypatch):
+@pytest.mark.parametrize("make_zip", [False, True], ids=["folder", "zip-only"])
+def test_export_buttons_and_review_gate(qtbot, tone_audio, tmp_path, monkeypatch, make_zip):
     window = MainWindow()
     qtbot.addWidget(window)
     window.show()
     errors = []
+    messages = []
+    prompts = []
     monkeypatch.setattr(QMessageBox, "warning", lambda *args: errors.append(args[2]) or QMessageBox.Ok)
-    monkeypatch.setattr(QMessageBox, "information", lambda *args: QMessageBox.Ok)
+    monkeypatch.setattr(QMessageBox, "information",
+                        lambda *args: messages.append(args[2]) or QMessageBox.Ok)
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(tmp_path))
-    monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: ("gui-export", True))
+
+    def choose_name(parent, title, label, **kwargs):
+        prompts.append((title, label, kwargs["text"]))
+        return "gui-export", True
+
+    monkeypatch.setattr(QInputDialog, "getText", choose_name)
     window.import_audio(tone_audio)
     qtbot.waitUntil(lambda: window.worker is None, timeout=30000)
     window.table.set_sentences([
         Sentence("One sentence.", 0.1, 1.0, review_reasons=["Check."]),
         Sentence("Another sentence.", 2.0, 3.0),
     ], 4)
-    qtbot.mouseClick(window.export_button, Qt.LeftButton)
+    button = window.zip_button if make_zip else window.export_button
+    qtbot.mouseClick(button, Qt.LeftButton)
     assert errors and "Yellow" in errors[0]
     assert window.worker is None
+    assert not prompts and not messages
+    errors.clear()
     window.table.item(0, 7).setCheckState(Qt.Checked)
-    qtbot.mouseClick(window.export_button, Qt.LeftButton)
+    qtbot.mouseClick(button, Qt.LeftButton)
     assert window.worker is not None
     assert not window.table.isEnabled() and not window.process_button.isEnabled()
     qtbot.waitUntil(lambda: window.worker is None, timeout=30000)
-    assert (tmp_path / "gui-export" / "002-another-sentence.mp3").is_file()
-    assert (tmp_path / "gui-export" / "transcript.txt").is_file()
+    folder = tmp_path / "gui-export"
+    archive_path = tmp_path / "gui-export.zip"
+    expected = {"001-one-sentence.mp3", "002-another-sentence.mp3",
+                "transcript.txt", "transcript.csv"}
+    if make_zip:
+        assert archive_path.is_file() and not folder.exists()
+        with zipfile.ZipFile(archive_path) as archive:
+            assert archive.testzip() is None
+            assert set(archive.namelist()) == expected
+            rows = list(csv.DictReader(io.StringIO(archive.read("transcript.csv").decode("utf-8"))))
+            assert [row["filename"] for row in rows] == [
+                "001-one-sentence.mp3", "002-another-sentence.mp3"]
+            assert [row["sentence"] for row in rows] == [
+                "One sentence.", "Another sentence."]
+            assert archive.read("transcript.txt").decode("utf-8").splitlines() == [
+                "001-one-sentence.mp3\tOne sentence.",
+                "002-another-sentence.mp3\tAnother sentence."]
+        assert prompts == [("ZIP archive name",
+                            "Create a ZIP archive named (without .zip):", "test_split")]
+        assert str(archive_path) in messages[0] and "in ZIP archive:" in messages[0]
+        assert "to:\n" not in messages[0] and "None" not in messages[0]
+    else:
+        assert folder.is_dir() and not archive_path.exists()
+        assert {path.name for path in folder.iterdir()} == expected
+        assert prompts == [("Output folder name", "Create a new folder named:", "test_split")]
+        assert str(folder) in messages[0] and "ZIP archive" not in messages[0]
+    assert not list(tmp_path.glob(".sentence-export-*"))
+    assert not errors and messages == [window.status_label.text()]
     assert "Exported 2 MP3" in window.status_label.text()
     assert window.table.isEnabled()
     window.close()

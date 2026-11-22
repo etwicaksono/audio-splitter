@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import time
 import traceback
+import zipfile
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtMultimedia import QMediaPlayer
@@ -97,8 +98,13 @@ def run_self_test(app, window, arguments) -> int:
                     state.update(step="export", last=now)
                     window.zip_button.click()
             elif step == "export":
-                assert (args.report_dir / "clips" / "transcript.csv").is_file()
                 assert (args.report_dir / "clips.zip").is_file()
+                assert not (args.report_dir / "clips").exists()
+                with zipfile.ZipFile(args.report_dir / "clips.zip") as archive:
+                    assert archive.testzip() is None
+                    assert {"transcript.txt", "transcript.csv"} <= set(archive.namelist())
+                    assert sum(name.endswith(".mp3") for name in archive.namelist()) == \
+                        report["sentences_exported"]
                 report["stages"]["export_seconds"] = now - state["last"]
                 report["total_seconds"] = now - state["start"]
                 report["success"] = True
