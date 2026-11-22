@@ -35,8 +35,16 @@ the Include or Reviewed values. The toolbar shows how many rows are selected.
 - **Include all / Reviewed all** check or uncheck every sentence, including rows
   outside the current selection. Click again to clear every value.
 - A dash means the target rows have mixed values. Clicking it checks all target
-  rows; the next click unchecks them. A checkbox in the table still changes only
-  its own sentence. Selection is retained after edits and checkbox changes.
+  rows; the next click unchecks them. A normal checkbox click changes only its
+  own sentence. Selection is retained after edits and checkbox changes.
+
+To change a range directly, click the first **Include** or **Reviewed** checkbox,
+then **Shift-click** the last checkbox in the same column. Every checkbox between
+the two, including both ends, takes the last checkbox's new state. This supports
+both checking and unchecking, in either direction. Include and Reviewed remember
+separate starting points. Further Shift-clicks keep the starting point until a
+normal checkbox click replaces it. Without a starting point, Shift-click changes
+only that checkbox. Loading a recording or merging/splitting resets the points.
 
 Mark **Reviewed** only after checking the clips. Bulk review is a manual action;
 it does not validate speech or remove the original review reasons. Unchecking it

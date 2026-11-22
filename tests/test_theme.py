@@ -1,7 +1,9 @@
 import pytest
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QInputDialog, QLabel, QMessageBox, QPushButton, QScrollArea
+from PySide6.QtWidgets import (
+    QInputDialog, QLabel, QMessageBox, QPushButton, QScrollArea, QStyle, QStyleOptionViewItem,
+)
 
 from app import LIGHT_THEME
 from src.models.sentence import Sentence
@@ -128,4 +130,37 @@ def test_bulk_toolbar_contrast_and_compact_layout(themed_app, qtbot, size):
         scroll.ensureWidgetVisible(widget)
         center = widget.mapTo(scroll.viewport(), widget.rect().center())
         assert scroll.viewport().rect().contains(center)
+    window.close()
+
+
+@pytest.mark.parametrize("field,column", [("include", 6), ("reviewed", 7)])
+def test_shift_checkbox_updates_themed_toolbar(themed_app, qtbot, field, column):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.table.set_sentences([
+        Sentence(str(row), row * 2, row * 2 + 1, review_reasons=["Check."])
+        for row in range(3)
+    ], 6)
+    window.show()
+    qtbot.waitExposed(window)
+    table = window.table
+    window.centralWidget().ensureWidgetVisible(table)
+    for row, modifiers in ((0, Qt.NoModifier), (2, Qt.ShiftModifier), (2, Qt.ShiftModifier)):
+        index = table.model().index(row, column)
+        table.scrollTo(index)
+        option = QStyleOptionViewItem()
+        option.rect = table.visualRect(index)
+        table.itemDelegateForColumn(column).initStyleOption(option, index)
+        indicator = table.style().subElementRect(QStyle.SE_ItemViewItemCheckIndicator, option, table)
+        qtbot.mouseClick(table.viewport(), Qt.LeftButton, modifiers, indicator.center())
+        if modifiers & Qt.ShiftModifier:
+            qtbot.keyRelease(table.viewport(), Qt.Key_Shift)
+            expected = getattr(table.sentences[row], field)
+            assert all(getattr(sentence, field) == expected for sentence in table.sentences)
+            assert getattr(window, f"{field}_all_box").checkState() == (
+                Qt.Checked if expected else Qt.Unchecked)
+    if field == "reviewed":
+        assert "3 need review" in window.summary_label.text()
+    else:
+        assert "3 included" in window.summary_label.text()
     window.close()

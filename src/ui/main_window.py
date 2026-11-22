@@ -142,8 +142,8 @@ class MainWindow(QMainWindow):
         self.split_button = QPushButton("Split at word…")
         edit_row.addWidget(self.merge_button)
         edit_row.addWidget(self.split_button)
-        hint = QLabel("Ctrl/Shift-click rows to select multiple. Double-click text or times to edit. "
-                      "Yellow rows must be reviewed before export.")
+        hint = QLabel("Ctrl/Shift-click rows to select multiple. Shift-click checkboxes to change a range. "
+                      "Double-click text or times to edit. Yellow rows must be reviewed before export.")
         hint.setWordWrap(True)
         hint.setObjectName("muted")
         edit_row.addWidget(hint, 1)

@@ -1,10 +1,33 @@
-from PySide6.QtCore import QItemSelectionModel, QSignalBlocker, Qt, Signal
+from PySide6.QtCore import QEvent, QItemSelectionModel, QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHeaderView, QPushButton, QTableWidget, QTableWidgetItem,
+    QAbstractItemView, QHeaderView, QPushButton, QStyledItemDelegate, QStyle,
+    QStyleOptionViewItem, QTableWidget, QTableWidgetItem,
 )
 
 from src.models.sentence import Sentence, merge_sentences, split_sentence
+
+
+class CheckboxDelegate(QStyledItemDelegate):
+    def editorEvent(self, event, model, option, index):
+        table = self.parent()
+        flags = index.flags()
+        if (event.type() == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton
+                and table.isEnabled() and flags & Qt.ItemIsEnabled
+                and flags & Qt.ItemIsUserCheckable):
+            target = QStyleOptionViewItem(option)
+            self.initStyleOption(target, index)
+            indicator = table.style().subElementRect(
+                QStyle.SE_ItemViewItemCheckIndicator, target, table)
+            if indicator.contains(event.position().toPoint()):
+                if event.modifiers() & Qt.ShiftModifier:
+                    table.set_checkbox_range(index.row(), index.column())
+                    return True
+                changed = super().editorEvent(event, model, option, index)
+                if changed:
+                    table.checkbox_anchors[index.column()] = table.sentences[index.row()]
+                return changed
+        return super().editorEvent(event, model, option, index)
 
 
 class SentenceTable(QTableWidget):
@@ -16,6 +39,10 @@ class SentenceTable(QTableWidget):
         super().__init__(0, 9, parent)
         self.sentences: list[Sentence] = []
         self.audio_duration = 0.0
+        self.checkbox_anchors: dict[int, Sentence] = {}
+        self.checkbox_delegate = CheckboxDelegate(self)
+        for column in (6, 7):
+            self.setItemDelegateForColumn(column, self.checkbox_delegate)
         self.setHorizontalHeaderLabels([
             "#", "Sentence text", "Start (s)", "End (s)", "Duration", "Preview",
             "Include", "Reviewed", "Boundary status",
@@ -30,6 +57,7 @@ class SentenceTable(QTableWidget):
         self.itemChanged.connect(self.item_changed)
 
     def set_sentences(self, sentences: list[Sentence], duration: float):
+        self.checkbox_anchors.clear()
         self.clearSelection()
         self.sentences = sentences
         self.audio_duration = duration
@@ -40,6 +68,14 @@ class SentenceTable(QTableWidget):
 
     def selected_rows(self) -> list[int]:
         return sorted(index.row() for index in self.selectionModel().selectedRows())
+
+    def set_checkbox_range(self, row: int, column: int):
+        sentence = self.sentences[row]
+        anchor = self.checkbox_anchors.setdefault(column, sentence)
+        first = next((i for i, value in enumerate(self.sentences) if value is anchor), row)
+        start, end = sorted((first, row))
+        field = "include" if column == 6 else "reviewed"
+        self.set_checked(field, not getattr(sentence, field), range(start, end + 1))
 
     def checkbox_state(self, field: str, rows=None):
         if field not in ("include", "reviewed"):
@@ -85,6 +121,8 @@ class SentenceTable(QTableWidget):
             for col, checked in ((6, sentence.include), (7, sentence.reviewed)):
                 item = QTableWidgetItem()
                 item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable)
+                item.setToolTip("Shift-click to check/uncheck the range from the last checkbox click "
+                                "in this column.")
                 item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
                 self.setItem(row, col, item)
             status = "Needs review" if sentence.needs_review else \
@@ -149,6 +187,7 @@ class SentenceTable(QTableWidget):
             raise ValueError("Select a sentence with a following sentence to merge.")
         self.sentences[row:row + 2] = [
             merge_sentences(self.sentences[row], self.sentences[row + 1])]
+        self.checkbox_anchors.clear()
         self.refresh()
         self.updated.emit()
 
@@ -158,5 +197,6 @@ class SentenceTable(QTableWidget):
             raise ValueError("Select exactly one sentence to split.")
         row = rows[0]
         self.sentences[row:row + 1] = list(split_sentence(self.sentences[row], after_word))
+        self.checkbox_anchors.clear()
         self.refresh()
         self.updated.emit()

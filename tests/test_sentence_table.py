@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import pytest
 from PySide6.QtCore import QItemSelectionModel, Qt
-from PySide6.QtWidgets import QAbstractItemView
+from PySide6.QtWidgets import QAbstractItemView, QStyle, QStyleOptionViewItem
 
 from src.models.sentence import Sentence, Word
 from src.ui.sentence_table import SentenceTable
@@ -30,6 +30,18 @@ def select_rows(table, rows):
     for row in rows:
         table.selectionModel().select(
             table.model().index(row, 0), QItemSelectionModel.Select | QItemSelectionModel.Rows)
+
+
+def click_checkbox(qtbot, table, row, column, modifiers=Qt.NoModifier):
+    index = table.model().index(row, column)
+    table.scrollTo(index)
+    option = QStyleOptionViewItem()
+    option.rect = table.visualRect(index)
+    table.itemDelegateForColumn(column).initStyleOption(option, index)
+    indicator = table.style().subElementRect(QStyle.SE_ItemViewItemCheckIndicator, option, table)
+    qtbot.mouseClick(table.viewport(), Qt.LeftButton, modifiers, indicator.center())
+    if modifiers & Qt.ShiftModifier:
+        qtbot.keyRelease(table.viewport(), Qt.Key_Shift)
 
 
 def test_ctrl_and_shift_select_multiple_rows(sentence_table, qtbot):
@@ -149,3 +161,95 @@ def test_selection_remains_valid_after_merge_split_and_new_recording(sentence_ta
     assert table.selected_rows() == [0]
     table.set_sentences([], 0)
     assert table.selected_rows() == []
+
+
+@pytest.mark.parametrize("field,column", [("include", 6), ("reviewed", 7)])
+@pytest.mark.parametrize("checked", [False, True])
+@pytest.mark.parametrize("anchor,target", [(1, 3), (3, 1)])
+def test_shift_checkbox_sets_inclusive_range(sentence_table, qtbot, field, column, checked,
+                                           anchor, target):
+    table = sentence_table
+    table.set_checked(field, not checked)
+    before = deepcopy(table.sentences)
+    click_checkbox(qtbot, table, anchor, column)
+    assert getattr(table.sentences[anchor], field) is checked
+    updates = []
+    table.updated.connect(lambda: updates.append(True))
+    click_checkbox(qtbot, table, target, column, Qt.ShiftModifier)
+    assert len(updates) == 1
+    for row, sentence in enumerate(table.sentences):
+        expected = checked if 1 <= row <= 3 else not checked
+        original = deepcopy(before[row])
+        setattr(original, field, expected)
+        assert sentence == original
+        assert table.item(row, column).checkState() == (Qt.Checked if expected else Qt.Unchecked)
+        if field == "reviewed":
+            assert sentence.needs_review is (not expected)
+
+
+@pytest.mark.parametrize("field,column", [("include", 6), ("reviewed", 7)])
+def test_repeated_shift_checkbox_clicks_keep_anchor_until_normal_click(sentence_table, qtbot,
+                                                                     field, column):
+    table = sentence_table
+    table.set_checked(field, False)
+    click_checkbox(qtbot, table, 0, column)
+    click_checkbox(qtbot, table, 2, column, Qt.ShiftModifier)
+    click_checkbox(qtbot, table, 3, column, Qt.ShiftModifier)
+    assert all(getattr(sentence, field) for sentence in table.sentences)
+    click_checkbox(qtbot, table, 1, column, Qt.ShiftModifier)
+    assert [getattr(sentence, field) for sentence in table.sentences] == [False, False, True, True]
+    click_checkbox(qtbot, table, 3, column)
+    click_checkbox(qtbot, table, 2, column, Qt.ShiftModifier)
+    assert not any(getattr(sentence, field) for sentence in table.sentences)
+
+
+def test_checkbox_range_anchors_are_independent_and_no_anchor_changes_only_one(sentence_table, qtbot):
+    table = sentence_table
+    table.set_checked("include", False)
+    click_checkbox(qtbot, table, 0, 6)
+    click_checkbox(qtbot, table, 3, 7, Qt.ShiftModifier)
+    assert [sentence.reviewed for sentence in table.sentences] == [False, False, False, True]
+    click_checkbox(qtbot, table, 2, 6, Qt.ShiftModifier)
+    assert [sentence.include for sentence in table.sentences] == [True, True, True, False]
+    click_checkbox(qtbot, table, 1, 7, Qt.ShiftModifier)
+    assert [sentence.reviewed for sentence in table.sentences] == [False, True, True, True]
+
+
+def test_checkbox_anchor_survives_text_edits_but_resets_for_new_sentences(sentence_table, qtbot):
+    table = sentence_table
+    table.set_checked("include", False)
+    click_checkbox(qtbot, table, 0, 6)
+    table.item(1, 1).setText("Edited sentence.")
+    click_checkbox(qtbot, table, 2, 6, Qt.ShiftModifier)
+    assert [sentence.include for sentence in table.sentences] == [True, True, True, False]
+    table.set_sentences([Sentence(str(row), row * 2, row * 2 + 1) for row in range(4)], 8)
+    click_checkbox(qtbot, table, 2, 6, Qt.ShiftModifier)
+    assert [sentence.include for sentence in table.sentences] == [True, True, False, True]
+
+
+@pytest.mark.parametrize("operation", ["merge", "split"])
+def test_checkbox_anchor_resets_after_merge_or_split(sentence_table, qtbot, operation):
+    table = sentence_table
+    click_checkbox(qtbot, table, 0, 7)
+    table.clearSelection()
+    table.selectRow(2)
+    if operation == "merge":
+        table.merge_selected()
+    else:
+        table.split_selected(1)
+    click_checkbox(qtbot, table, 2, 7, Qt.ShiftModifier)
+    assert [row for row, sentence in enumerate(table.sentences) if sentence.reviewed] == [0, 2]
+
+
+def test_shift_click_outside_checkbox_or_on_disabled_table_does_not_change_values(sentence_table,
+                                                                                qtbot):
+    table = sentence_table
+    click_checkbox(qtbot, table, 0, 7)
+    before = deepcopy(table.sentences)
+    cell = table.visualItemRect(table.item(3, 7))
+    qtbot.mouseClick(table.viewport(), Qt.LeftButton, Qt.ShiftModifier, cell.topRight())
+    qtbot.keyRelease(table.viewport(), Qt.Key_Shift)
+    assert table.sentences == before
+    table.setEnabled(False)
+    click_checkbox(qtbot, table, 3, 7, Qt.ShiftModifier)
+    assert table.sentences == before
